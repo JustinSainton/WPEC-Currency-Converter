@@ -27,7 +27,7 @@ class WPSC_Widget_Currency_Converter extends WP_Widget {
 		$sql = "SELECT * FROM `" . WPSC_TABLE_CURRENCY_LIST . "` WHERE `visible` = '1' ORDER BY `country` ASC";
 
 		$countries = $wpdb->get_results( $sql, ARRAY_A );
-		$output .= '<form method="post" action="">';
+		$output = '<form method="post" action="">';
 		$output .='<select name="currency_option" style="width:200px;">';
 			foreach( $countries as $country ){
 				if ( wpsc_get_customer_meta( 'wpsc_currency_code' ) == $country['id'] )
@@ -77,4 +77,5 @@ class WPSC_Widget_Currency_Converter extends WP_Widget {
 	}
 
 }
+
 ?>

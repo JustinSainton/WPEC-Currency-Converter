@@ -8,22 +8,22 @@ Author: JustinSainton
 Author URI: http://www.zao.is
 */
 
-if( ! class_exists( 'WPEC_Multi_Currency' ) ) :
-	
+//todo - make sure taxes/coupons are converted	
 class WPEC_Multi_Currency {
 	
 	private static $instance;
 
 	public function __construct() {
 		
-		add_action( 'wpsc_init'                        , array( $this, 'load' )  );
+		add_action( 'wpsc_includes'                    , array( $this, 'includes' )  );
+		add_action( 'wpsc_constants'                   , array( $this, 'constants' )  );
 		add_action( 'wp_enqueue_scripts'               , array( $this, 'enqueue_scripts' ) );
 		add_action( 'wpsc_bottom_of_shopping_cart'     , array( $this, 'display_fancy_currency_notification' ) );
 		add_action( 'wpsc_additional_sales_amount_info', array( $this, 'wpsc_show_currency_price' ), 10 );
 		add_action( 'wpsc_before_submit_checkout'      , array( $this, 'wpsc_reset_prices' ) );
 		add_action( 'wpsc_save_cart_item'              , array( $this, 'wpsc_save_currency_info' ), 10, 2 );
 		add_action( 'wp_head'                          , array( $this, 'load_wpsc_converter' ) );
-		add_action( 'widget_init'                      , array( $this, 'register_widget' ) );
+		add_action( 'widgets_init'                     , array( $this, 'register_widget' ) );
 
 		add_filter( 'wpsc_convert_total_shipping'       , array( $this, 'wpsc_convert_price' ) );
 		add_filter( 'wpsc_do_convert_price'             , array( $this, 'wpsc_convert_price' ) );
@@ -58,13 +58,16 @@ class WPEC_Multi_Currency {
 		return register_widget( 'WPSC_Widget_Currency_Converter' );
 	}
 
+	public static function constants() {
+
+		define( 'WPSC_CURRENCY_FOLDER', dirname( __FILE__ ) );
+		define( 'WPSC_CURRENCY_URL'   , plugins_url( __FILE__ ) );
+	}
 	/*
 	 * Sets constants, loads currency helper functions and widget.
 	 */
-	public static function load() {
+	public static function includes() {
 		
-		define( 'WPSC_CURRENCY_FOLDER', dirname( __FILE__ ) );
-		define( 'WPSC_CURRENCY_URL'   , plugins_url( __FILE__ ) );
 		include_once WPSC_CURRENCY_FOLDER . '/currency.helpers.php';
 		include_once WPSC_CURRENCY_FOLDER . '/widgets/currency_chooser_widget.php';
 	}
@@ -73,7 +76,10 @@ class WPEC_Multi_Currency {
 	 * Enqueues javascript and css...which are entirely blank at this point. 
 	 */
 	public static function enqueue_scripts() {
-		
+
+		if ( ! defined( 'WPSC_CURRENCY_URL' ) )
+			self::load();
+
 		wp_enqueue_script( 'wpsc-currency-js', WPSC_CURRENCY_URL.'/js/currency.js', array( 'jquery' ), '2.0' );
 		wp_enqueue_style( 'wpsc-currency-css', WPSC_CURRENCY_URL.'/css/currency.css', false, '2.0' );
 	}
@@ -82,16 +88,14 @@ class WPEC_Multi_Currency {
 	 * This, I imagine, was a notification at some point...or was intended to be eventually.
 	 */
 	
-	public function display_fancy_currency_notification(){
-		
+	public function display_fancy_currency_notification() {
 		global $wpsc_cart;
-
 
 		if ( $wpsc_cart->selected_currency_code == ( $currency = wpsc_get_customer_meta( 'wpsc_base_currency_code' ) ) )
 			return;
 		
-		$output .= "<div id='wpsc_currency_notification'>";
-		$output .= '<p>' . __( 'By clicking Make Purchase you will be redirected to the gateway, and the cart prices will be converted to the shops local currency', 'wpsc' ). ' ' . $currency . '</p>';
+		$output = "<div id='wpsc_currency_notification'>";
+		$output .= '<p>' . __( 'By clicking Make Purchase, you will be redirected to the gateway, and the cart prices will be converted to the store\'s local currency, ', 'wpsc' ) . ' ' . $currency . '</p>';
 		$output .= '</div>';
 		
 		echo $output;
@@ -160,7 +164,8 @@ class WPEC_Multi_Currency {
 	}
 	
 	public function override_currency_symbol( $args ) {
-		
+		global $wpsc_cart;
+
 		$args['isocode'] = $wpsc_cart->selected_currency_isocode;
 		return $args;
 	}
@@ -210,7 +215,7 @@ class WPEC_Multi_Currency {
 	public function load_wpsc_converter() {
 		global $wpsc_cart, $wpdb;
 		
-		if ( isset( $_REQUEST['wpsc_admin_action'] ) && 'change_currency_country' != $_REQUEST['wpsc_admin_action'] )
+		if ( ! isset( $_REQUEST['wpsc_admin_action'] ) || ( isset( $_REQUEST['wpsc_admin_action'] ) && 'change_currency_country' != $_REQUEST['wpsc_admin_action'] ) )
 			return;
 		
 		$wpsc_cart->use_currency_converter = true;
@@ -223,23 +228,20 @@ class WPEC_Multi_Currency {
 		wpsc_update_customer_meta( 'wpsc_base_currency_code', $local_currency_code );
 		
 		if ( ! isset( $_POST['reset'] ) ) {
-			$sql = "SELECT `code` FROM `" . WPSC_TABLE_CURRENCY_LIST . "` WHERE `id` = %f LIMIT 1";
-			$foreign_currency_code = $wpdb->get_var( $wpdb->prepare( $sql, absint( $_POST['currency_option'] ) ) );
-			$sql = "SELECT `symbol` FROM `" . WPSC_TABLE_CURRENCY_LIST . "` WHERE `id` = %f LIMIT 1";
-			$foreign_currency_symbol = $wpdb->get_var( $wpdb->prepare( $sql, absint( $_POST['currency_option'] ) ) );
-			$sql = "SELECT `isocode` FROM `" . WPSC_TABLE_CURRENCY_LIST . "` WHERE `id` = %f LIMIT 1";
-			$foreign_currency_isocode = $wpdb->get_var( $wpdb->prepare( $sql, absint( $_POST['currency_option'] ) ) );
+			$currency         = isset( $_POST['currency_option'] ) ? $_POST['currency_option'] : '';
+			$foreign_currency = $wpdb->get_row( $wpdb->prepare( "SELECT `code`, `symbol`, `isocode` FROM `" . WPSC_TABLE_CURRENCY_LIST . "` WHERE `id` = %d LIMIT 1", $currency ) );
+			$foreign_currency_code = $foreign_currency->code;
 
-			wpsc_update_customer_meta( 'wpsc_currency_code', absint( $_POST['currency_option'] ) );
+			wpsc_update_customer_meta( 'wpsc_currency_code', absint( $currency ) );
 
-			$wpsc_cart->selected_currency_code = $foreign_currency_code;
-			$wpsc_cart->selected_currency_symbol = $foreign_currency_symbol;
-			$wpsc_cart->selected_currency_isocode = $foreign_currency_isocode;
+			$wpsc_cart->selected_currency_code    = $foreign_currency->code;
+			$wpsc_cart->selected_currency_symbol  = $foreign_currency->symbol;
+			$wpsc_cart->selected_currency_isocode = $foreign_currency->isocode;
 		
 		} else {
 			wpsc_update_customer_meta( 'wpsc_currency_code', get_option( 'currency_type' ) );
 			$wpsc_cart->selected_currency_code = $local_currency_code;
-			$foreign_currency_code = $local_currency_code;
+			$foreign_currency_code             = $local_currency_code;
 		}
 		
 		if ( ! empty( $foreign_currency_code ) || $foreign_currency_code != $local_currency_code )
@@ -254,10 +256,21 @@ class WPEC_Multi_Currency {
 		foreach ( $wpsc_cart->cart_items as $item )
 			$item->total_price = round( $this->wpsc_convert_price( $item->total_price ), 3 );
 	}
+
+	/**
+	 * Need to investigate what this was intended to do.  Imagine it's for the per-item shipping.  Check key, return null, remove_filter
+	 * 
+	 * @param type $check 
+	 * @param type $object_id 
+	 * @param type $meta_key 
+	 * @param type $single 
+	 * @return type
+	 */
+	public static function convert_per_item_shipping( $check, $object_id, $meta_key, $single ) {
+		return $check;
+	}
 }
-	
-add_action( 'plugins_loaded', array( 'WPEC_Multi_Currency', 'get_instance' ) );
-	
-endif;
+
+WPEC_Multi_Currency::get_instance();		
 
 ?>
